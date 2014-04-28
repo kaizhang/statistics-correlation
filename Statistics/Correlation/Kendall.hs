@@ -10,7 +10,7 @@
 -- Stability   : experimental
 -- Portability :
 --
--- O(NlogN) algorithm for calculating Kendall's tao.
+-- Fast O(NlogN) implementation of Kendall's tau.
 
 module Statistics.Correlation.Kendall 
     ( kendall ) where
@@ -27,7 +27,7 @@ import Data.PrimRef
 kendall ∷ (Ord a, G.Vector v (a, a)) ⇒ v (a, a) → Double
 {-# INLINE kendall #-}
 kendall xy' = runST $ do
-    xy ← G.unsafeThaw xy'
+    xy ← G.thaw xy'
     let n = GM.length xy
         n_0 = (fromIntegral n * (fromIntegral n-1)) `shiftR` 1 ∷ Integer
     n_dis ← newPrimRef 0
@@ -37,8 +37,8 @@ kendall xy' = runST $ do
     mergeSort (compare `on` snd) xy tmp n_dis
     equalY ← numOfEqualBy ((==) `on` snd) xy
     n_d ← readPrimRef n_dis
-    return ( fromIntegral (n_0 - n_d - equalX - equalY - n_d) /
-             (sqrt.fromIntegral) ((n_0 - equalX) * (n_0 - equalY)) )
+    return $ fromIntegral (n_0 - n_d - equalX - equalY - n_d) /
+             (sqrt.fromIntegral) ((n_0 - equalX) * (n_0 - equalY))
 
 numOfEqualBy ∷ (PrimMonad m, GM.MVector v a)
              ⇒ (a → a → Bool) → v (PrimState m) a → m Integer
@@ -51,11 +51,11 @@ numOfEqualBy f xs = do
         n = GM.length xs
         loop c !acc !i | i >= n - 1 = modifyPrimRef' c (+ g acc)
                        | otherwise = do
-                         x1 ← GM.unsafeRead xs i
-                         x2 ← GM.unsafeRead xs (i+1)
-                         if f x1 x2
-                            then loop c (acc+1) (i+1)
-                            else modifyPrimRef' c (+ g acc) >> loop c 1 (i+1)
+                           x1 ← GM.unsafeRead xs i
+                           x2 ← GM.unsafeRead xs (i+1)
+                           if f x1 x2
+                              then loop c (acc+1) (i+1)
+                              else modifyPrimRef' c (+ g acc) >> loop c 1 (i+1)
         g x = fromIntegral ((x * (x - 1)) `shiftR` 1)
 
 mergeSort ∷ (PrimMonad m, GM.MVector v e)
@@ -114,12 +114,13 @@ merge cmp src buf mid count = do GM.unsafeCopy tmp lower
     loop !low !iLow !eLow !high !iHigh !eHigh !iIns = case cmp eHigh eLow of
         LT -> do GM.unsafeWrite src iIns eHigh
                  modifyPrimRef' count (+ fromIntegral (GM.length low - iLow))
-                 wroteHigh low iLow eLow high (iHigh + 1) (iIns + 1)
+                 wroteHigh low iLow eLow high (iHigh+1) (iIns+1)
         _  -> do GM.unsafeWrite src iIns eLow
-                 wroteLow low (iLow + 1) high iHigh eHigh (iIns + 1)
+                 wroteLow low (iLow+1) high iHigh eHigh (iIns+1)
 
 -- $references
 --
 -- * William R. Knight. (1966) A computer method for calculating Kendall's Tau
---   with ungrouped data. /Journal of the American Statistical Association/
+--   with ungrouped data. /Journal of the American Statistical Association/,
+--   Vol. 61, No. 314, Part 1, pp. 436-439. (http://www.jstor.org/pss/2282833).
 --
