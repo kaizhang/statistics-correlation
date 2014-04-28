@@ -25,20 +25,21 @@ import Data.Bits
 import Data.PrimRef
 
 kendall ∷ (Ord a, G.Vector v (a, a)) ⇒ v (a, a) → Double
-{-# INLINE kendall #-}
+{-# INLINABLE kendall #-}
 kendall xy' = runST $ do
     xy ← G.thaw xy'
     let n = GM.length xy
         n_0 = (fromIntegral n * (fromIntegral n-1)) `shiftR` 1 ∷ Integer
     n_dis ← newPrimRef 0
-    I.sortBy (compare `on` fst) xy
+    I.sort xy
     equalX ← numOfEqualBy ((==) `on` fst) xy
     tmp ← GM.new n
     mergeSort (compare `on` snd) xy tmp n_dis
     equalY ← numOfEqualBy ((==) `on` snd) xy
     n_d ← readPrimRef n_dis
-    return $ fromIntegral (n_0 - n_d - equalX - equalY - n_d) /
-             (sqrt.fromIntegral) ((n_0 - equalX) * (n_0 - equalY))
+    let nu = n_0 - n_d - equalX - equalY - n_d
+        de = (n_0 - equalX) * (n_0 - equalY)
+    return $ fromIntegral nu / (sqrt.fromIntegral) de
 
 numOfEqualBy ∷ (PrimMonad m, GM.MVector v a)
              ⇒ (a → a → Bool) → v (PrimState m) a → m Integer
