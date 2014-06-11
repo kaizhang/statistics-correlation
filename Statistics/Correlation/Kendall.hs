@@ -1,14 +1,6 @@
 {-# LANGUAGE BangPatterns, FlexibleContexts #-}
-
 -- |
 -- Module      : Statistics.Correlation.Kendall
--- Description : Kendall's τ
--- Copyright   : © 2014 Kai Zhang
--- License     : GPL-3
---
--- Maintainer  : kai@kzhang.org
--- Stability   : experimental
--- Portability :
 --
 -- Fast O(NlogN) implementation of
 -- <http://en.wikipedia.org/wiki/Kendall_tau_rank_correlation_coefficient Kendall's tau>.
@@ -23,7 +15,11 @@
 -- $n_c = number of concordant pairs$, $n_d = number of discordant pairs$.
 
 module Statistics.Correlation.Kendall 
-    ( kendall ) where
+    ( kendall
+
+    -- * References
+    -- $references
+    ) where
 
 import qualified Data.Vector.Algorithms.Intro as I
 import qualified Data.Vector.Generic as G
@@ -41,35 +37,36 @@ kendall xy'
   | otherwise  = runST $ do
     xy <- G.thaw xy'
     let n = GM.length xy
-        n_0 = (fromIntegral n * (fromIntegral n-1)) `shiftR` 1 :: Integer
-    n_dis <- newSTRef 0
+    n_dRef <- newSTRef 0
     I.sort xy
-    equalX <- numOfTiesBy ((==) `on` fst) xy
+    tieX <- numOfTiesBy ((==) `on` fst) xy
+    tieXY <- numOfTiesBy (==) xy
     tmp <- GM.new n
-    mergeSort (compare `on` snd) xy tmp n_dis
-    equalY <- numOfTiesBy ((==) `on` snd) xy
-    n_d <- readSTRef n_dis
-    let nu = n_0 - n_d - equalX - equalY - n_d
-        de = (n_0 - equalX) * (n_0 - equalY)
-    return $ fromIntegral nu / (sqrt.fromIntegral) de
+    mergeSort (compare `on` snd) xy tmp n_dRef
+    tieY <- numOfTiesBy ((==) `on` snd) xy
+    n_d <- readSTRef n_dRef
+    let n_0 = (fromIntegral n * (fromIntegral n-1)) `shiftR` 1 :: Integer
+        n_c = n_0 - n_d - tieX - tieY + tieXY
+    return $ fromIntegral (n_c - n_d) /
+             (sqrt.fromIntegral) ((n_0 - tieX) * (n_0 - tieY))
 {-# INLINE kendall #-}
 
+-- calculate number of tied pairs in a sorted vector
 numOfTiesBy :: GM.MVector v a
             => (a -> a -> Bool) -> v s a -> ST s Integer
-numOfTiesBy f xs = do
-    count <- newSTRef (0::Integer)
-    loop count (1::Int) (0::Int)
-    readSTRef count
-    where
-        n = GM.length xs
-        loop c !acc !i | i >= n - 1 = modifySTRef' c (+ g acc)
-                       | otherwise = do
-                           x1 <- GM.unsafeRead xs i
-                           x2 <- GM.unsafeRead xs (i+1)
-                           if f x1 x2
-                              then loop c (acc+1) (i+1)
-                              else modifySTRef' c (+ g acc) >> loop c 1 (i+1)
-        g x = fromIntegral ((x * (x - 1)) `shiftR` 1)
+numOfTiesBy f xs = do count <- newSTRef (0::Integer)
+                      loop count (1::Int) (0::Int)
+                      readSTRef count
+  where
+    n = GM.length xs
+    loop c !acc !i | i >= n - 1 = modifySTRef' c (+ g acc)
+                   | otherwise = do
+                       x1 <- GM.unsafeRead xs i
+                       x2 <- GM.unsafeRead xs (i+1)
+                       if f x1 x2
+                          then loop c (acc+1) (i+1)
+                          else modifySTRef' c (+ g acc) >> loop c 1 (i+1)
+    g x = fromIntegral ((x * (x - 1)) `shiftR` 1)
 {-# INLINE numOfTiesBy #-}
 
 -- Implementation of Knight's merge sort (adapted from vector-algorithm). This
@@ -81,22 +78,22 @@ mergeSort :: GM.MVector v e
           -> STRef s Integer
           -> ST s ()
 mergeSort cmp src buf count = loop 0 (GM.length src - 1)
-    where
-        loop l u 
-          | u == l = return ()
-          | u - l == 1 = do
-              eL <- GM.unsafeRead src l
-              eU <- GM.unsafeRead src u
-              case cmp eL eU of
-                  GT -> do GM.unsafeWrite src l eU
-                           GM.unsafeWrite src u eL
-                           modifySTRef' count (+1) 
-                  _ -> return ()
-          | otherwise  = do
-              let mid = (u + l) `shiftR` 1
-              loop l mid
-              loop mid u
-              merge cmp (GM.unsafeSlice l (u-l+1) src) buf (mid - l) count
+  where
+    loop l u 
+      | u == l = return ()
+      | u - l == 1 = do
+          eL <- GM.unsafeRead src l
+          eU <- GM.unsafeRead src u
+          case cmp eL eU of
+              GT -> do GM.unsafeWrite src l eU
+                       GM.unsafeWrite src u eL
+                       modifySTRef' count (+1) 
+              _ -> return ()
+      | otherwise  = do
+          let mid = (u + l) `shiftR` 1
+          loop l mid
+          loop mid u
+          merge cmp (GM.unsafeSlice l (u-l+1) src) buf (mid - l) count
 {-# INLINE mergeSort #-}
 
 merge :: GM.MVector v e
@@ -140,4 +137,3 @@ merge cmp src buf mid count = do GM.unsafeCopy tmp lower
 --   with ungrouped data. /Journal of the American Statistical Association/,
 --   Vol. 61, No. 314, Part 1, pp. 436-439. <http://www.jstor.org/pss/2282833>
 --
-
