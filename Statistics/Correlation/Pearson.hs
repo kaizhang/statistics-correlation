@@ -13,7 +13,8 @@ import qualified Data.Vector.Generic as G
 -- | calculate pearson correlation between two samples without checking they are
 -- in equal length.
 pearson :: G.Vector v Double => v Double -> v Double -> Double
-pearson x y = cov / sqrt (var_x * var_y)
+pearson x y | G.length x /= G.length y = error "Statistics.Correlation.Pearson.pearson: Incompatible dimensions"
+            | otherwise = cov / sqrt (var_x * var_y)
   where
     (m_x, var_x) = meanVarianceUnb x
     (m_y, var_y) = meanVarianceUnb y

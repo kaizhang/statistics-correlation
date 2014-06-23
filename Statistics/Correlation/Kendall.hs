@@ -31,11 +31,13 @@ import Data.STRef
 
 -- | /O(nlogn)/ Compute the Kendall's tau from a vector of paired data.
 -- Return NaN when number of pairs <= 1.
-kendall :: (Ord a, Ord b, G.Vector v (a, b)) => v (a, b) -> Double
-kendall xy'
-  | G.length xy' <= 1 = 0/0
+kendall :: (Ord a, Ord b, G.Vector v a, G.Vector v b, G.Vector v (a, b))
+        => v a -> v b -> Double
+kendall x y
+  | G.length x /= G.length y = error "Statistics.Correlation.Kendall.kendall: Incompatible dimensions"
+  | G.length x <= 1 = 0/0
   | otherwise  = runST $ do
-    xy <- G.thaw xy'
+    xy <- G.unsafeThaw $ G.zip x y
     let n = GM.length xy
     n_dRef <- newSTRef 0
     I.sort xy
