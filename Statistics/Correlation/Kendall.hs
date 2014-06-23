@@ -34,11 +34,10 @@ import Data.STRef
 kendall :: (Ord a, Ord b, G.Vector v a, G.Vector v b, G.Vector v (a, b))
         => v a -> v b -> Double
 kendall x y
-  | G.length x /= G.length y = error "Statistics.Correlation.Kendall.kendall: Incompatible dimensions"
-  | G.length x <= 1 = 0/0
+  | n /= G.length y = error "Statistics.Correlation.Kendall.kendall: Incompatible dimensions"
+  | n <= 1 = 0/0
   | otherwise  = runST $ do
     xy <- G.unsafeThaw $ G.zip x y
-    let n = GM.length xy
     n_dRef <- newSTRef 0
     I.sort xy
     tieX <- numOfTiesBy ((==) `on` fst) xy
@@ -51,6 +50,7 @@ kendall x y
         n_c = n_0 - n_d - tieX - tieY + tieXY
     return $ fromIntegral (n_c - n_d) /
              (sqrt.fromIntegral) ((n_0 - tieX) * (n_0 - tieY))
+  where n = G.length x
 {-# INLINE kendall #-}
 
 -- calculate number of tied pairs in a sorted vector
