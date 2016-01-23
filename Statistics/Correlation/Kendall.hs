@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, FlexibleContexts #-}
+{-# LANGUAGE BangPatterns, CPP, FlexibleContexts #-}
 -- |
 -- Module      : Statistics.Correlation.Kendall
 --
@@ -14,30 +14,36 @@
 -- $n_2 = number of pairs tied for the second quantify$,
 -- $n_c = number of concordant pairs$, $n_d = number of discordant pairs$.
 
-module Statistics.Correlation.Kendall 
+module Statistics.Correlation.Kendall
     ( kendall
+    , kendallMatrix
 
     -- * References
     -- $references
     ) where
 
+import Control.Monad.ST (ST, runST)
+import Data.Bits (shiftR)
+import Data.Function (on)
+import Data.STRef
 import qualified Data.Vector.Algorithms.Intro as I
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Generic.Mutable as GM
-import Data.Function
-import Data.Bits
-import Control.Monad.ST
-import Data.STRef
+import qualified Data.Vector.Unboxed as U
+
+import qualified Data.Matrix.Generic as MG
+import qualified Data.Matrix.Symmetric as MS
+
+import Statistics.Correlation.Internal
 
 -- | /O(nlogn)/ Compute the Kendall's tau from a vector of paired data.
 -- Return NaN when number of pairs <= 1.
-kendall :: (Ord a, Ord b, G.Vector v a, G.Vector v b, G.Vector v (a, b))
-        => v a -> v b -> Double
-kendall x y
-  | n /= G.length y = error "Statistics.Correlation.Kendall.kendall: Incompatible dimensions"
-  | n <= 1 = 0/0
+kendall :: (Ord a, Ord b, G.Vector v (a, b)) => v (a, b) -> Double
+kendall xy'
+  | G.length xy' <= 1 = 0/0
   | otherwise  = runST $ do
-    xy <- G.unsafeThaw $ G.zip x y
+    xy <- G.thaw xy'
+    let n = GM.length xy
     n_dRef <- newSTRef 0
     I.sort xy
     tieX <- numOfTiesBy ((==) `on` fst) xy
@@ -50,8 +56,12 @@ kendall x y
         n_c = n_0 - n_d - tieX - tieY + tieXY
     return $ fromIntegral (n_c - n_d) /
              (sqrt.fromIntegral) ((n_0 - tieX) * (n_0 - tieY))
-  where n = G.length x
 {-# INLINE kendall #-}
+
+kendallMatrix :: (Ord a, MG.Matrix m v a, G.Vector v (a,a))
+              => m v a -> MS.SymMatrix U.Vector Double
+kendallMatrix = correlationMatrix kendall
+{-# INLINE kendallMatrix #-}
 
 -- calculate number of tied pairs in a sorted vector
 numOfTiesBy :: GM.MVector v a
@@ -75,13 +85,13 @@ numOfTiesBy f xs = do count <- newSTRef (0::Integer)
 -- function is used to count the number of discordant pairs.
 mergeSort :: GM.MVector v e
           => (e -> e -> Ordering)
-          -> v s e 
-          -> v s e 
+          -> v s e
+          -> v s e
           -> STRef s Integer
           -> ST s ()
 mergeSort cmp src buf count = loop 0 (GM.length src - 1)
   where
-    loop l u 
+    loop l u
       | u == l = return ()
       | u - l == 1 = do
           eL <- GM.unsafeRead src l
@@ -89,7 +99,7 @@ mergeSort cmp src buf count = loop 0 (GM.length src - 1)
           case cmp eL eU of
               GT -> do GM.unsafeWrite src l eU
                        GM.unsafeWrite src u eL
-                       modifySTRef' count (+1) 
+                       modifySTRef' count (+1)
               _ -> return ()
       | otherwise  = do
           let mid = (u + l) `shiftR` 1
@@ -114,7 +124,7 @@ merge cmp src buf mid count = do GM.unsafeCopy tmp lower
     upper = GM.unsafeSlice mid (GM.length src - mid) src
     tmp = GM.unsafeSlice 0 mid buf
     wroteHigh low iLow eLow high iHigh iIns
-      | iHigh >= GM.length high = 
+      | iHigh >= GM.length high =
           GM.unsafeCopy (GM.unsafeSlice iIns (GM.length low - iLow) src)
                         (GM.unsafeSlice iLow (GM.length low - iLow) low)
       | otherwise = do eHigh <- GM.unsafeRead high iHigh

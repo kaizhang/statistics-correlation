@@ -1,22 +1,45 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns #-}
 -- |
 -- Module      : Statistics.Correlation.Pearson
 --
 
 module Statistics.Correlation.Pearson
     ( pearson
+    , pearsonMatrix
     ) where
 
-import Statistics.Sample
 import qualified Data.Vector.Generic as G
+import qualified Data.Vector.Unboxed as U
 
--- | calculate pearson correlation between two samples without checking they are
--- in equal length.
-pearson :: G.Vector v Double => v Double -> v Double -> Double
-pearson x y | G.length x /= G.length y = error "Statistics.Correlation.Pearson.pearson: Incompatible dimensions"
-            | otherwise = cov / sqrt (var_x * var_y)
+import qualified Data.Matrix.Generic as MG
+import qualified Data.Matrix.Symmetric as MS
+
+import Statistics.Correlation.Internal
+
+-- | use Welford's one-pass algorithm to calculate the Pearson's correlation
+-- between two samples.
+pearson :: G.Vector v (Double, Double) => v (Double, Double) -> Double
+pearson xy | n <= 1 = 0/0
+           | otherwise = sum_cross / (sqrt sum_xsq * sqrt sum_ysq)
   where
-    (m_x, var_x) = meanVarianceUnb x
-    (m_y, var_y) = meanVarianceUnb y
-    cov = G.sum (G.zipWith (\a b -> (a - m_x) * (b - m_y)) x y) / (n - 1)
-    n = fromIntegral . G.length $ x
+    (sum_cross, sum_xsq, sum_ysq, _, _, _) = G.foldl step (0,0,0,0,0,0::Int) xy
+    step (!vxy, !vx, !vy, !mx, !my, !i) (x, y) =
+        ( vxy + delta_x * delta_y * ratio
+        , vx + delta_x * delta_x * ratio
+        , vy + delta_y * delta_y * ratio
+        , mx + delta_x / fromIntegral (i+1)
+        , my + delta_y / fromIntegral (i+1)
+        , i + 1
+        )
+      where
+        delta_x = x - mx
+        delta_y = y - my
+        ratio = fromIntegral i / fromIntegral (i+1)
+    n = G.length xy
+{-# INLINE pearson #-}
+
+pearsonMatrix :: (MG.Matrix m v Double, G.Vector v (Double, Double))
+              => m v Double -> MS.SymMatrix U.Vector Double
+pearsonMatrix = correlationMatrix pearson
+{-# INLINE pearsonMatrix #-}
