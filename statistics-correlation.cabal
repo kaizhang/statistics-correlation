@@ -26,6 +26,7 @@ library
     Statistics.Correlation.Internal
     Statistics.Correlation.Kendall
     Statistics.Correlation.Pearson
+    Statistics.Correlation.Spearman
 
   -- other-modules:
   build-depends:
